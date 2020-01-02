@@ -15,7 +15,7 @@ object Main extends App {
       inboundQueue  <- Queue.unbounded[Array[Byte]]
       outboundQueue <- Queue.unbounded[Array[Byte]]
       _ <- SocketClient.>.openConnection(new URI("wss://echo.websocket.org"), inboundQueue, outboundQueue).sandbox
-            .retry(Schedule.spaced(5.seconds))
+            .repeat(Schedule.spaced(5.seconds))
             .fork
             .provideSome[ZEnv] { base =>
               new SocketClient with Blocking with Clock {

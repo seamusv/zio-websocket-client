@@ -1,0 +1,9 @@
+.idea
+*.iml
+out
+gen
+target
+.directory
+
+.bloop
+.metals

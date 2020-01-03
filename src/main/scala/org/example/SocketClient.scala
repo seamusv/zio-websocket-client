@@ -7,7 +7,6 @@ import sttp.client.basicRequest
 import sttp.client.ws.WebSocket
 import sttp.model.Uri
 import sttp.model.ws.WebSocketFrame
-import zio.blocking.Blocking
 import zio.{ Queue, Task, ZIO, ZManaged }
 
 trait SocketClient {
@@ -38,8 +37,6 @@ object SocketClient {
   }
 
   trait AsyncHttpSocketClient extends SocketClient {
-    def blocking: Blocking
-
     override val socketClient: Service[Any] = new Service[Any] {
       override def openConnection(uri: URI, inboundQueue: Queue[Array[Byte]], outboundQueue: Queue[Array[Byte]]): ZIO[Any, Throwable, Unit] = {
         val acquire: ZIO[Any, Throwable, WebSocket[Task]] = for {
@@ -80,10 +77,5 @@ object SocketClient {
     }
   }
 
-  def makeAsyncHttpSocketClient: ZIO[Blocking, Nothing, SocketClient] =
-    ZIO.access[Blocking] { r =>
-      new AsyncHttpSocketClient {
-        override def blocking: Blocking = r
-      }
-    }
+  object AsyncHttpSocketClient extends AsyncHttpSocketClient
 }

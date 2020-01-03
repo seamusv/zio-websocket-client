@@ -2,8 +2,8 @@ package org.example
 
 import java.net.URI
 
+import org.example.SocketClient.AsyncHttpSocketClient
 import zio._
-import zio.blocking.Blocking
 import zio.clock.Clock
 import zio.duration._
 
@@ -11,16 +11,14 @@ object Main extends App {
 
   override def run(args: List[String]): ZIO[zio.ZEnv, Nothing, Int] =
     (for {
-      socketClient0 <- SocketClient.makeAsyncHttpSocketClient
       inboundQueue  <- Queue.unbounded[Array[Byte]]
       outboundQueue <- Queue.unbounded[Array[Byte]]
-      _ <- SocketClient.>.openConnection(new URI("wss://echo.websocket.org"), inboundQueue, outboundQueue).sandbox
+      _ <- SocketClient.>.openConnection(new URI("ws://echo.websocket.org"), inboundQueue, outboundQueue).sandbox
             .repeat(Schedule.spaced(5.seconds))
             .fork
             .provideSome[ZEnv] { base =>
-              new SocketClient with Blocking with Clock {
-                override val socketClient: SocketClient.Service[Any] = socketClient0.socketClient
-                override val blocking: Blocking.Service[Any]         = base.blocking
+              new SocketClient with Clock {
+                override val socketClient: SocketClient.Service[Any] = AsyncHttpSocketClient.socketClient
                 override val clock: Clock.Service[Any]               = base.clock
               }
             }

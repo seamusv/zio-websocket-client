@@ -1,16 +1,16 @@
 package org.example
 
-import org.example.api.realtime
 import org.example.realtime.RealtimeClient
+import org.example.realtime.api._
 import org.example.realtime.models.{ OutboundMessage, SendText }
 import sttp.client.asynchttpclient.zio.AsyncHttpClientZioBackend
 import zio._
 import zio.console.{ getStrLn, _ }
-import zio.macros.delegate._
-import zio.macros.delegate.syntax._
 import zio.stream.ZStream
 
 object Main extends ManagedApp {
+
+  private val layers = AsyncHttpClientZioBackend.layer() >>> RealtimeClient.live
 
   val pgm: ZManaged[Console with RealtimeClient, Throwable, Unit] =
     for {
@@ -36,10 +36,7 @@ object Main extends ManagedApp {
 
   override def run(args: List[String]): ZManaged[zio.ZEnv, Nothing, Int] =
     (for {
-      backend <- AsyncHttpClientZioBackend().toManaged(_.close().orDie)
-      env <- (ZIO.environment[ZEnv] @@
-              enrichWithM(RealtimeClient.make(backend))).toManaged_
-      _ <- pgm.provide(env)
+      _ <- pgm.provideSomeLayer[Console](layers)
     } yield 0)
       .fold(_ => 1, _ => 0)
 }

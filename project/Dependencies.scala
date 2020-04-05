@@ -3,7 +3,7 @@ import sbt._
 object Dependencies {
 
   lazy val circe: Seq[ModuleID] = {
-    val circeVersion = "0.12.3"
+    val circeVersion = "0.13.0"
 
     Seq(
       "io.circe" %% "circe-core"    % circeVersion,
@@ -18,7 +18,7 @@ object Dependencies {
     )
 
   lazy val sttp: Seq[ModuleID] = {
-    val sttpVersion = "2.0.0-RC6"
+    val sttpVersion = "2.0.7"
 
     Seq(
       "com.softwaremill.sttp.client" %% "core"                          % sttpVersion,
@@ -28,12 +28,11 @@ object Dependencies {
   }
 
   lazy val zio: Seq[ModuleID] = {
-    val zioVersion = "1.0.0-RC17"
+    val zioVersion = "1.0.0-RC18-2"
 
     Seq(
       "dev.zio" %% "zio"             % zioVersion,
       "dev.zio" %% "zio-streams"     % zioVersion,
-      "dev.zio" %% "zio-macros-core" % "0.6.2",
       "dev.zio" %% "zio-test"        % zioVersion % "test",
       "dev.zio" %% "zio-test-sbt"    % zioVersion % "test"
     )

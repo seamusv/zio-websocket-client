@@ -1,30 +1,26 @@
 package org.example.realtime
 
-import org.example.api.realtime
-import org.example.realtime.models.OutboundMessage
+import org.example.realtime.models.{ AppEvent, OutboundMessage, StringResponse }
 import sttp.client._
 import sttp.client.ws.WebSocket
 import sttp.model.ws.WebSocketFrame
 import zio.stream.{ Take, ZStream }
 import zio.{ IO, Task, ZIO, ZManaged }
 
-trait CustomMessaging {
-  val customMessaging: CustomMessaging.Service[Any]
-}
+object Rtm {
+  type MessageStream = ZStream[Any, Throwable, AppEvent]
 
-object CustomMessaging {
+  def parseMessage(message: String): Task[AppEvent] =
+    IO.effect(StringResponse(message))
 
-  def parseMessage(message: String): Task[String] =
-    IO.effect(message)
+  trait Service {
 
-  trait Service[R] {
-
-    private def readMessage(ws: WebSocket[Task]): ZIO[Any, Throwable, Take[Nothing, String]] =
+    private def readMessage(ws: WebSocket[Task]): ZIO[Any, Throwable, Take[Nothing, AppEvent]] =
       ws.receiveText().flatMap(_.fold(_ => ZIO.succeed(Take.End), value => parseMessage(value).map(Take.Value(_))))
 
-    def connect[R0 <: R, E1 >: Throwable](url: String, outbound: ZStream[R0, E1, OutboundMessage]): ZManaged[R0 with RealtimeClient, Throwable, ZStream[Any, Throwable, String]] =
+    def connect[R, E1 >: Throwable](url: String, outbound: ZStream[R, E1, OutboundMessage]): ZManaged[R with RealtimeEnv, E1, MessageStream] =
       for {
-        ws <- realtime.openWebsocket(basicRequest.get(uri"$url")).toManaged_
+        ws <- openWebsocket(basicRequest.get(uri"$url")).toManaged_
         _ <- (for {
               queue <- outbound.toQueueUnbounded[E1, OutboundMessage]
               _ <- ZStream.fromQueue(queue).forever.unTake.zipWithIndex.foreachManaged {

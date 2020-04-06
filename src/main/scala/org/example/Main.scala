@@ -1,42 +1,60 @@
 package org.example
 
+import java.io.IOException
+import java.util.concurrent.TimeUnit
+
 import org.example.realtime.RealtimeClient
 import org.example.realtime.api._
 import org.example.realtime.models.{ OutboundMessage, SendText }
 import sttp.client.asynchttpclient.zio.AsyncHttpClientZioBackend
+import sttp.client.{ SttpBackendOptions, SttpClientException }
 import zio._
+import zio.clock.Clock
 import zio.console.{ getStrLn, _ }
+import zio.duration._
+import zio.random.Random
 import zio.stream.ZStream
 
-object Main extends ManagedApp {
+import scala.concurrent.duration.FiniteDuration
 
-  private val layers = AsyncHttpClientZioBackend.layer() >>> RealtimeClient.live
+object Main extends App {
 
-  val pgm: ZManaged[Console with RealtimeClient, Throwable, Unit] =
-    for {
-      outgoing <- ZStream
-                   .fromEffect(for {
-                     input   <- getStrLn
-                     message = SendText(input)
-                   } yield message)
-                   .forever
-                   .toQueueUnbounded[Throwable, OutboundMessage]
-      socketFiber <- (for {
-                      receiver <- realtime.connect("wss://echo.websocket.org", ZStream.fromQueue(outgoing).forever.unTake)
-                      _ <- receiver
-                            .collectM {
-                              case m => putStrLn(s"> $m")
-                            }
-                            .runDrain
-                            .toManaged_
-                    } yield ()).fork
-      _ <- putStrLn("Ready for input!").toManaged_
-      _ <- socketFiber.join.toManaged_
-    } yield ()
+  private val sttpOptions = SttpBackendOptions.Default
+    .httpProxy("localhost", 6969)
+    .connectionTimeout(FiniteDuration(10, TimeUnit.SECONDS))
 
-  override def run(args: List[String]): ZManaged[zio.ZEnv, Nothing, Int] =
+  private val layers = AsyncHttpClientZioBackend.layer(options = sttpOptions) >>> RealtimeClient.live
+
+  val readConsole: ZIO[Console, IOException, SendText] = getStrLn.map(SendText)
+
+  def retrySchedule(queue: Queue[String]): Schedule[Clock with Random, Throwable, (Duration, Throwable)] =
+    Schedule.exponential(2.seconds).jittered && Schedule.doWhileM[Throwable] {
+      case _: SttpClientException.ConnectException => queue.offer("Connection exception... retrying.").as(true)
+      case _: SttpClientException.ReadException    => queue.offer("Read exception... dying.").as(false)
+      case e                                       => queue.offer(s"Unknown error: ${e.getMessage}").as(false)
+    }
+
+  def run(args: List[String]): ZIO[ZEnv, Nothing, Int] =
     (for {
-      _ <- pgm.provideSomeLayer[Console](layers)
+      eventMessagesQueue <- Queue.unbounded[String]
+      _                  <- eventMessagesQueue.take.flatMap(console.putStrLn(_)).forever.fork
+      outgoing           = ZStream.fromEffect(readConsole).forever.toQueueUnbounded[Throwable, OutboundMessage]
+      _ <- outgoing.use(queue =>
+            realtime
+              .connect("wss://echo.websocket.org", ZStream.fromQueue(queue).forever.unTake)
+              .use { stream =>
+                println("CONNECTED!")
+                stream.collectM {
+                  case m => putStrLn(s"> $m")
+                }.runDrain
+              }
+              .retry(retrySchedule(eventMessagesQueue))
+              .repeat(Schedule.spaced(2.seconds))
+              .provideSomeLayer[ZEnv](layers)
+          )
     } yield 0)
-      .fold(_ => 1, _ => 0)
+      .foldM(
+        err => console.putStrLn(s"Error: $err").as(1),
+        ZIO.succeed(_)
+      )
 }

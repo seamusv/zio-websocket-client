@@ -23,9 +23,12 @@ object Rtm {
         ws <- openWebsocket(basicRequest.get(uri"$url")).toManaged_
         _ <- (for {
               queue <- outbound.toQueueUnbounded[E1, OutboundMessage]
-              _ <- ZStream.fromQueue(queue).forever.unTake.zipWithIndex.foreachManaged {
+              _ <- ZStream.fromQueue(queue).forever.unTake.zipWithIndex.foreachWhileManaged {
                     case (event, idx) =>
-                      ws.send(WebSocketFrame.text(s"Payload: $idx - $event"))
+                      for {
+                        isOpen <- ws.isOpen
+                        _      <- ZIO.when(isOpen)(ws.send(WebSocketFrame.text(s"Payload: $idx - $event")))
+                      } yield isOpen
                   }
             } yield ()).fork
         receive = ZStream
